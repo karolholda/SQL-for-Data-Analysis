@@ -15,7 +15,7 @@ Through these comprehensive steps, the project delivered actionable insights int
 
 ## 📊 Project Overview
 
-![Dashboard](https://github.com/PatrykPaul/FireShopDB/blob/main/img/diagram.png)
+![Dashboard](https://github.com/karolholda/SQL-for-Data-Analysis/blob/main/2%20SQL%20Project%20for%20Data%20Analysis%20Pizzeria/diagram.jpg)
 
 
 ### 🎯 Objectives
