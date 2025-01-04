@@ -1,4 +1,4 @@
-# 🧯 OizzeriaDB: Database for an Pizzeria Restaurant
+# 🍕 OizzeriaDB: Database for an Pizzeria Restaurant
 
 This project focuses on designing a database for an online store specializing in firefighting equipment. The database is built to manage products, users, orders, and inventory efficiently, enabling the seamless operation of the e-commerce platform. 
 
