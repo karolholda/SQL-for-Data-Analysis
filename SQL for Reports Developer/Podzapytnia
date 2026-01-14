@@ -1,0 +1,203 @@
+-- Modul 4.2 Podzapytania w SELECT, WHERE i FROM
+
+/* 
+4.2 Podzapytania
+
+Podzapytanie = zapytanie „w środku” innego zapytania.
+
+SQL pozwala wstawić jedno zapytanie w nawiasie, jako część innego – np. w WHERE, SELECT, FROM.
+Można to porównać do:
+„Najpierw znajdź mi to, a potem na podstawie tego znajdź coś jeszcze.”
+
+Kiedy używamy:
+	• Gdy wynik jednego zapytania jest potrzebny do innego
+	• Gdy chcemy porównać z czymś obliczonym (np. średnia, maksymalna wartość)
+	• Gdy chcemy przefiltrować dane na podstawie innej tabeli
+
+
+4.2.1 Podzapytanie w SELECT
+
+Zasada działania:
+1. Zapytanie główne zwraca listę wierszy (np. klientów lub produktów).
+2. W każdej kolumnie SELECT można osadzić podzapytanie, które odwołuje się do bieżącego wiersza.
+3. Podzapytanie musi zwracac pojedynczą wartość - jeden wiersz, jedna kolumne (np. COUNT, SUM, MAX itd.).
+	• Jeśli zwróci więcej niż jeden wiersz lub kolumnę, pojawi się błąd: "Subquery returned more than 1 value."
+4. Podzapytanie wykonywane jest osobno dla każdego wiersza głównego zapytania, co może prowadzić do spadku wydajności 
+   przy dużych tabelach.
+5. Podzapytanie może korzystać z aliasów zapytania głównego
+	• Tylko wtedy, gdy aliasy są widoczne w jego zakresie, to tzw. podzapytanie skorelowane (correlated subquery).
+
+Składnia
+SELECT	(SELECT ...) - jako kolumna
+
+Uwagi:
+	• Taka technika może być mniej wydajna przy dużych zbiorach danych (bo każde podzapytanie jest wykonywane osobno).
+	• W wielu przypadkach da się osiągnąć to samo efektywniej za pomocą JOIN + GROUP BY.
+	• Przy wielu podzapytaniach SELECT może stać się trudny do czytania. Ważne jest by odpowiednio formatować kod.
+
+Liczba zamówień każdego klienta
+Dla każdego klienta z tabeli Klienci, podzapytanie zlicza, ile razy jego Klient_ID pojawił się w tabeli Zamowienia.
+*/
+SELECT 
+    Klient_ID
+    ,(
+         SELECT COUNT(Klient_ID)  -- zwraca jedna wartosc
+         FROM Zamowienia z 
+         WHERE z.Klient_ID = k.Klient_ID  -- podzapytanie skorelowane
+      ) AS LiczbaZamowien
+FROM Klienci k;
+
+
+
+/* 
+Liczba zamówionych sztuk dla każdego produktu
+Dla każdego produktu z tabeli Produkty, podzapytanie zlicza ile sztuk produktu zostało zamówione.
+*/
+SELECT 
+	 Produkt_ID
+    ,(
+		SELECT SUM(Ilosc)  -- zwraca jedna wartosc
+		FROM Zamowione_Produkty zp
+		WHERE zp.Produkt_ID = p.Produkt_ID  -- podzapytanie skorelowane
+   ) AS Liczba_zamowien
+FROM Produkty p;
+
+
+
+/*
+4.2.1 Podzapytanie w WHERE
+
+To technika, w której warunek WHERE korzysta z wyniku innego zapytania – czyli tzw. podzapytania (subquery). 
+Takie podzapytanie może np. zwrócić listę ID klientów, produktów, zamówień itd.
+
+Zasada działania:
+1. Najpierw wykonywane jest podzapytanie – np. wybór Produkt_ID z Zamowione_Produkty.
+2. Główne zapytanie korzysta z jego wyniku do przefiltrowania danych (np. tylko te produkty, które były zamawiane).
+3. Podzapytanie w WHERE musi zwracać wartość lub listę wartości – do porównania.
+
+Składnia
+WHERE - kolumna IN (SELECT ...)
+
+
+Produkty, które zostały zamówione przynajmniej raz
+
+Podzapytanie 
+  • Wybiera wszystkie unikalne Produkt_ID, które pojawiły się w zamówieniach.
+  • Główne zapytanie wybiera tylko te produkty, których Produkt_ID znajduje się na tej liście.
+
+ 
+Predykaty (IN, EXISTS) omówione zostaną za chwilę.
+*/
+SELECT *
+FROM Produkty
+WHERE Produkt_ID IN 
+  (
+	  SELECT DISTINCT Produkt_ID
+	  FROM Zamowione_Produkty
+  );
+
+
+/*
+Klienci z więcej niż 20 zamówieniami w 2024 roku
+Podzapytanie 
+	• Wybiera Klient_ID tych klientów, którzy w 2024 roku złożyli więcej niż 20 zamówienia.
+	• Główne zapytanie pobiera dane tych klientów z tabeli Klienci.  
+*/
+SELECT * 
+FROM Klienci
+WHERE Klient_ID IN 
+(
+    SELECT Klient_ID
+    FROM Zamowienia 
+    WHERE YEAR(Data_Zlozenia_Zamowienia) = 2024
+    GROUP BY Klient_ID
+    HAVING COUNT(Klient_ID) > 20
+);
+
+
+
+/*
+4.2.1 Podzapytanie w FROM
+
+Podzapytanie w FROM - tymczasowa tabela
+To technika, w której w klauzuli FROM umieszczamy podzapytanie zwracające zestaw danych, 
+a następnie traktujemy je jak zwykłą tabelę, którą możemy dalej filtrować, sortować lub łączyć z innymi.
+
+Zasada działania:
+1. Podzapytanie wewnętrzne (w FROM (...) AS alias) przygotowuje dane – np. przelicza wartość zamówień.
+2. Wynik traktowany jest jako tymczasowa tabela (alias) – możesz ją przefiltrować, posortować 
+   (pod warunkiem ze uzyjesz TOP) lub połączyć z innymi tabelami.
+3. Można łączyć wiele tabel w środku podzapytania i zwracać tylko potrzebne dane (np. agregaty, obliczenia).
+
+Składnia
+FROM - FROM (SELECT ...) AS alias - tworzenie tymczasowej tabeli
+
+Klienci z wartością zamówień > 5000 zł w 2024
+
+	• Wewnątrz FROM (...) zliczamy wartość zamówień każdego klienta z 2024 roku.
+	• Poza podzapytaniem filtrujemy tylko tych, których łączna wartość zamówień przekroczyła 5000 zł.
+*/
+SELECT * 
+FROM (
+    SELECT 
+          z.Klient_ID
+        , SUM(zp.Cena_Sprzedazy * zp.Ilosc) AS Wartosc_Zamowien
+    FROM Zamowienia z
+    INNER JOIN Zamowione_Produkty zp ON z.Zamowienie_ID = zp.Zamowienie_ID
+    INNER JOIN Produkty p ON zp.Produkt_ID = p.Produkt_ID
+    WHERE YEAR(z.Data_Zlozenia_Zamowienia) = 2024
+    GROUP BY Klient_ID
+) AS Podsumowanie
+WHERE Wartosc_Zamowien > 250000;
+
+
+/*
+Ten sam wynik (nawet taki sam plan zapytania), 
+w wielu przypadkach silnik baz danych wie lepiej jak wykonac dane zapytanie :)
+*/
+SELECT 
+        z.Klient_ID
+    , SUM(zp.Cena_Sprzedazy * zp.Ilosc) AS Wartosc_Zamowien
+FROM Zamowienia z
+INNER JOIN Zamowione_Produkty zp ON z.Zamowienie_ID = zp.Zamowienie_ID
+INNER JOIN Produkty p ON zp.Produkt_ID = p.Produkt_ID
+WHERE YEAR(z.Data_Zlozenia_Zamowienia) = 2024
+GROUP BY Klient_ID
+HAVING SUM(zp.Cena_Sprzedazy * zp.Ilosc) > 250000
+
+
+
+/*
+Wiekszosc podzapytan w SELECT można umiescic w FROM, wezmy na przykład ostatni przykład z SELECT:
+Liczba zamówień każdego klienta
+*/
+
+SET STATISTICS IO ON
+SELECT 
+    Klient_ID
+    ,(
+         SELECT COUNT(z.Klient_ID)  -- zwraca jedna wartosc
+         FROM Zamowienia z 
+         WHERE z.Klient_ID = k.Klient_ID  -- podzapytanie skorelowane
+      ) AS Liczba_Zamowien
+FROM Klienci k;
+
+
+/*
+Wersja z podzapytaniem w FROM (i LEFT JOIN):
+1. Podzapytanie w FROM (alias z) zlicza liczbę zamówień dla każdego klienta (GROUP BY Klient_ID).
+2. Główne zapytanie łączy Klienci z tym wynikiem po Klient_ID.
+3. LEFT JOIN pozwala zachować klientów, którzy nie mają żadnych zamówień.
+4. COALESCE(..., 0) ustawia 0 dla klientów bez zamówień (inaczej byłby NULL).
+*/
+SELECT 
+     k.Klient_ID
+    ,COALESCE(z.Liczba_Zamowien, 0) AS Liczba_Zamowien
+FROM Klienci k
+LEFT JOIN (
+    SELECT 
+        Klient_ID, 
+        COUNT(*) AS Liczba_Zamowien
+    FROM Zamowienia
+    GROUP BY Klient_ID
+) AS z ON z.Klient_ID = k.Klient_ID;	
