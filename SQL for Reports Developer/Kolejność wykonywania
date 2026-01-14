@@ -1,0 +1,54 @@
+Kolejność wykonania: FROM -> WHERE -> GROUP BY -> HAVING -> SELECT -> ORDER BY
+
+/*
+4.1 Kolejność wykonania FROM -> WHERE -> GROUP BY -> HAVING -> SELECT -> ORDER BY
+W SQL zapytania nie są wykonywane „od góry do dołu” tak jak je piszemy.
+SQL najpierw zbiera dane, potem filtruje, grupuje, sortuje, i dopiero na końcu wyświetla to, co chcemy.
+
+Etap	| Słowo kluczowe		| Co robi
+---------------------------------------------------------------
+1️		| FROM + JOIN			    | Wybiera tabele i wykonuje JOIN-y
+2️		| WHERE					      | Filtruje wiersze (zanim cokolwiek policzysz)
+3️		| GROUP BY			    	| Grupuje dane
+4️		| HAVING			      	| Filtruje grupy (np. tylko te z SUM > 1000)
+5️		| SELECT			      	| Wybiera kolumny i wylicza aliasy, agregaty
+6️		| ORDER BY			    	| Sortuje wynik
+7️		| TOP (w SQL Server)	| Ogranicza ilość wyników
+
+
+Zrozumienie tej kolejności pomaga:	
+	• unikać błędów (np. użycie aliasu z SELECT w WHERE – co nie zadziała, a już zadziała w ORDER BY),
+	• pisać bardziej złożone zapytania,
+	• lepiej debugować i optymalizować.
+
+Przykład pełnego zapytania
+
+
+Co SQL robi po kolei:
+	1. FROM – łączy Produkty z Zamówione_produkty
+	2. WHERE – usuwa wiersze z Ilość <= 0
+	3. GROUP BY – grupuje dane wg Nazwa_produktu
+	4. HAVING – zostawia tylko te produkty, których łączna sprzedaż > 1000
+	5. SELECT – wybiera kolumny i oblicza/wyświetla łączna sprzedaż z aliasem Sprzedaz
+	6. ORDER BY – sortuje wg sprzedaży malejąco
+	7. TOP zostawia pierwsze 10 wierszy
+	8. Zwróć wynik
+
+Typowe pułapki:
+	• Alias z SELECT nie działa w WHERE, bo SELECT jest później
+	• HAVING działa po agregacji, a WHERE przed
+	• ORDER BY może używać aliasów z SELECT
+*/
+SELECT TOP 10
+	 zp.Produkt_ID
+	,p.Nazwa_produktu
+	,SUM(zp.Cena_Zakupu) AS Sprzedaz2
+	,SUM(zp.Cena_Zakupu * zp.Ilosc) AS Sprzedaz
+FROM Produkty p
+JOIN Zamowione_Produkty zp ON p.Produkt_ID = zp.Produkt_ID
+WHERE zp.Ilosc > 0
+GROUP BY 	 
+	 zp.Produkt_ID
+	,p.Nazwa_produktu
+HAVING SUM(zp.Cena_Zakupu * zp.Ilosc) > 1000
+ORDER BY Sprzedaz DESC;
