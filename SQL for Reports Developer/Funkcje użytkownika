@@ -1,0 +1,251 @@
+-- Modul 9.2 Skalarne i tabelaryczne funkcje użytkownika
+
+/* 
+9.2 Funkcje użytkownika (User-Defined Functions – UDF)
+
+9.2.1 Funkcja skalarna
+
+Funkcja skalarna - zwraca pojedynczą wartość (np. liczbę, tekst, datę) na podstawie przekazanych parametrów.
+
+Składnia
+CREATE FUNCTION [schemat].[Nazwa_Funkcji]
+(
+     @Parametr1 Typ
+    ,@Parametr2 Typ = Domyslna_Wartosc  -- (opcjonalnie)
+)
+RETURNS Typ_Wyniku
+AS
+BEGIN
+    DECLARE @Wynik Typ_Wyniku;
+
+    -- logika przetwarzania
+    SET @Wynik = ...;
+
+    RETURN @Wynik;
+END;
+
+Najważniejsze elementy:
+	• Schemat – zwykle dbo, ale można podać inny (np. finanse.fn_Podatek).
+	• Parametry – można dodać jeden, wiele lub pominąć (wtedy funkcja działa globalnie).
+	• RETURNS – obowiązkowe, określa typ danych zwracanych przez funkcję (np. INT, DECIMAL, NVARCHAR).
+	• Funkcja musi zwrócić jedną wartość za pomocą RETURNS.
+
+
+Funkcja zwracająca status klienta, na podstawie liczby zamówień
+	• Klasyfikacja klienta jako: Nowy, Stały lub VIP.
+Dzięki temu możemy łatwo przypisać kategorię klienta na podstawie jego aktywności zakupowej.
+*/
+CREATE FUNCTION dbo.fn_Status_Klienta
+(
+    @Liczba_Zamowien INT
+)
+RETURNS NVARCHAR(20)
+AS
+BEGIN
+    DECLARE @Status NVARCHAR(20);
+
+    SET @Status = CASE 
+        WHEN @Liczba_Zamowien >= 150 THEN 'VIP'
+        WHEN @Liczba_Zamowien >= 80 THEN 'Staly klient'
+        ELSE 'Nowy klient'
+    END;
+    RETURN @Status;
+END;
+
+
+-- Użycie funkcji w SELECT
+SELECT 
+     Klient_ID
+    ,COUNT(Zamowienie_ID) AS Liczba
+    ,dbo.fn_Status_Klienta(COUNT(Zamowienie_ID)) AS Status
+FROM Zamowienia
+GROUP BY Klient_ID;
+
+
+/*
+Funkcja obliczająca liczbę dni do dziś
+	• przyjmuje datę (np. Data_Zlozenia_Zamowienia) i zwraca liczbę dni, 
+      jakie minęły od tej daty do dnia dzisiejszego (GETDATE()).
+*/
+CREATE FUNCTION dbo.fn_Dni_Do_Dzis
+(
+    @Data_Wejsciowa DATE
+)
+RETURNS INT
+AS
+BEGIN
+    RETURN DATEDIFF(DAY, @Data_Wejsciowa, GETDATE());
+END;
+
+
+-- Użycie – ile dni minęło od ostatniego zamówienia klienta:
+SELECT   Imie
+        ,Nazwisko
+        ,MAX(Data_Zlozenia_Zamowienia) AS max_Data_Zlozenia_Zamowienia  
+        ,MAX(Data_Wyslania_Zamowienia) AS max_Data_Wyslania_Zamowienia
+        ,GETDATE() AS dzisiaj
+        ,dbo.fn_Dni_Do_Dzis(MAX(Data_Zlozenia_Zamowienia)) AS Dni_Od_Zlozenia_Zamowienia
+        ,dbo.fn_Dni_Do_Dzis(MAX(Data_Wyslania_Zamowienia)) AS Dni_Od_Wyslania_Zamowienia
+FROM Klienci k
+JOIN Zamowienia z ON k.Klient_ID = z.Klient_ID
+GROUP BY k.Klient_ID, Imie, Nazwisko;
+
+
+/* 
+9.2.2 Funkcja tabelaryczna (Inline Table-Valued Function - ITVF)
+
+Funkcja tabelaryczna to funkcja, która zwraca wynik w formie tabeli (czyli zbioru wierszy i kolumn), 
+a nie jednej wartości jak funkcja skalarna.
+	
+Kiedy używać?
+	• Gdy potrzeba wielokrotnie wykorzystywać złożone zapytanie (SELECT ... JOIN ... WHERE ...) w różnych miejscach,
+	• Gdy ważna jest czytelności, wielokrotne użycie i parametryzacja,
+	• Gdy potrzeba uniknąć duplikacji kodu SQL w wielu miejscach.
+	
+Składnia
+CREATE FUNCTION dbo.NazwaFunkcji
+(
+    @Parametr1 Typ,
+    @Parametr2 Typ = DomyslnaWartosc  -- opcjonalnie
+)
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT ...
+    FROM ...
+    WHERE ...
+);
+
+Najważniejsze cechy:
+    • Funkcja nie używa BEGIN/END – zamiast tego zwraca zapytanie SELECT ... bezpośrednio.
+    • Nie ma deklaracji zmiennych wewnątrz funkcji – logika musi być zawarta w jednym zapytaniu.
+    • Można traktować wynik tej funkcji jak zwykłą tabelę lub widok w klauzuli FROM.
+
+
+Lista zamówień złożonych przez klienta
+
+*/
+CREATE FUNCTION dbo.fn_Zamowienia_Klienta
+(
+    @Klient_ID INT
+)
+RETURNS TABLE
+AS
+RETURN 
+(
+    SELECT 
+          z.Klient_ID
+        , z.Zamowienie_ID
+        , z.Data_Zlozenia_Zamowienia
+        , p.Nazwa_produktu
+        , zp.Ilosc
+    FROM Zamowienia z
+    JOIN Zamowione_produkty zp ON z.Zamowienie_ID = zp.Zamowienie_ID
+    JOIN Produkty p ON zp.Produkt_ID = p.Produkt_ID
+    WHERE z.Klient_ID = @Klient_ID
+);
+
+
+/*
+Użycie funkcji tabelarycznej w zapytaniu – można dodać WHERE, JOIN, ORDER BY itp.
+*/
+SELECT * FROM dbo.fn_Zamowienia_Klienta(6);
+
+
+
+/*
+Produkty z rabatem powyżej X%
+Funkcja zwraca wszystkie produkty, które miały przypisany rabat większy niż zadana wartość. 
+Może być używana np. do filtrowania promocji.
+*/
+CREATE FUNCTION dbo.fn_Produkty_Z_Rabatem(@MinRabat DECIMAL(5,2))
+RETURNS TABLE
+AS
+RETURN
+(
+    SELECT 
+        p.Produkt_ID,
+        p.Nazwa_produktu,
+        zp.Cena_Sprzedazy,
+        zp.Rabat_Procent,
+        z.Data_Zlozenia_Zamowienia
+    FROM Zamowione_produkty zp
+    INNER JOIN Produkty p ON zp.Produkt_ID = p.Produkt_ID
+    INNER JOIN Zamowienia z ON zp.Zamowienie_ID = z.Zamowienie_ID
+    WHERE zp.Rabat_Procent > @MinRabat
+);
+
+-- Użycie w FROM + dodatkowe filtrowanie:
+SELECT *
+FROM dbo.fn_Produkty_Z_Rabatem(0.2)  -- rabat większy niż 20%
+WHERE Data_Zlozenia_Zamowienia >= '2024-01-01';
+
+
+
+/* 
+9.2.3 Funkcja tabelaryczna z logiką (Multistatement Table-Valued Function - MSTVF)
+
+Funkcji tabelaryczna z logiką - używamy, gdy potrzebujemy użyć więcej niż jeden SELECT albo dodatkowe obliczenia.
+Jest mniej wydajna niż wersja inline.
+
+To bardziej rozbudowana funkcja, w której używa się:
+    • DECLARE, SET, IF, WHILE itd.
+    • kilku zapytań lub złożonej logiki krok po kroku
+    • danych tymczasowo trzymanych w zmiennej tabelarycznej
+    • BEGIN/END
+
+Składnia:
+CREATE FUNCTION dbo.fn_Nazwa
+(
+    @Parametr INT
+)
+RETURNS @Wynik TABLE (
+     Kolumna1 Typ
+    ,Kolumna2 Typ
+)
+AS
+BEGIN
+    -- logika funkcji
+    INSERT INTO @Wynik
+    SELECT ...
+    FROM ...
+    WHERE ...;
+-- można dodać kolejne INSERT-y, warunki, pętle itd.
+RETURN;
+END;
+
+
+Lista klientów i ich ostatniech zamówień
+*/
+CREATE FUNCTION dbo.fn_Ostatnie_Zamowienie_Klienta
+(
+    @Rok INT
+)
+RETURNS @Wynik TABLE (
+     Klient_ID INT
+    ,Data_Ostatniego_Zamowienia DATE
+)
+AS
+BEGIN
+    INSERT INTO @Wynik
+    SELECT 
+         k.Klient_ID
+        ,MAX(z.Data_Zlozenia_Zamowienia)
+    FROM Klienci k
+    INNER JOIN Zamowienia z ON k.Klient_ID = z.Klient_ID
+    WHERE YEAR(z.Data_Zlozenia_Zamowienia) = @Rok
+    GROUP BY k.Klient_ID;
+RETURN;
+END;
+
+-- Użycie:
+SELECT * FROM dbo.fn_Ostatnie_Zamowienie_Klienta(2024);
+
+
+-- Usunięcie funkcji testowych
+DROP FUNCTION [dbo].[fn_Ostatnie_Zamowienie_Klienta];
+DROP FUNCTION [dbo].[fn_Produkty_Z_Rabatem];
+DROP FUNCTION [dbo].[fn_Zamowienia_Klienta];
+DROP FUNCTION [dbo].[fn_Dni_Do_Dzis];
+DROP FUNCTION [dbo].[fn_Status_Klienta];
